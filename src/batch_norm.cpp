@@ -26,6 +26,12 @@
 
 #include <miopen/errors.hpp>
 #include <miopen/batch_norm.hpp>
+#include <cassert>
+
+#include <chrono>
+#include <iostream>
+
+#define MIOPEN_BN_SYNCH 0
 
 namespace miopen {
 
@@ -55,14 +61,16 @@ inline void profileSequence(Handle& handle, unsigned char select)
 {
 
     float ktime        = 0.;
-    static float ctime = 0.;
-
+    static float ctime = 0.; // TODO make this non-static parameter
+    assert((select < 3) && "profileSequence case incorrect");
     switch(select)
     {
 
     case 0:
         if(handle.IsProfilingEnabled())
         {
+            ctime = 0.;
+            handle.ResetKernelTime();
             ktime = handle.GetKernelTime();
             ctime = ktime;
 
@@ -71,10 +79,12 @@ inline void profileSequence(Handle& handle, unsigned char select)
             printf("ctime: %f\n", ctime);
 #endif
         }
+#if(MIOPEN_BN_SYNCH == 1)
         else
         {
             handle.Finish();
         }
+#endif
         break;
     case 1:
         if(handle.IsProfilingEnabled())
@@ -87,10 +97,12 @@ inline void profileSequence(Handle& handle, unsigned char select)
             printf("ctime: %f\n", ctime);
 #endif
         }
+#if(MIOPEN_BN_SYNCH == 1)
         else
         {
             handle.Finish();
         }
+#endif
         break;
 
     case 2:
@@ -98,7 +110,7 @@ inline void profileSequence(Handle& handle, unsigned char select)
         {
             handle.GetKernelTime();
             handle.AccumKernelTime(ctime);
-        } //
+        }
         break;
     }
 }
@@ -125,6 +137,10 @@ void bnFwdTrainSelectMulti(Handle& handle,
                            Data_t resultSaveInvVariance,
                            float inhw)
 {
+
+    //#if(MIO_BN_TIME_EVERYTHING == 1)
+    auto t_start = std::chrono::high_resolution_clock::now();
+    //#endif
 
     std::string kernel_subname{};
     if(resultsave && resultrunning)
@@ -240,6 +256,12 @@ void bnFwdTrainSelectMulti(Handle& handle,
             x, y, bnScale, bnBias);
         profileSequence(handle, 2);
     }
+
+    auto t_end = std::chrono::high_resolution_clock::now();
+
+    std::cout << "Wall clock: KERN LAUNCHES: "
+              << std::chrono::duration<double>(t_end - t_start).count() * 1000.0 << " ms."
+              << std::endl;
 }
 
 void bnFwdTrainSelectSingle(Handle& handle,
@@ -362,9 +384,14 @@ void bnBwdTrainSelectMulti(Handle& handle,
                            float inhw)
 { // TODO use this param somewhere
 
+    //#if(MIO_BN_TIME_EVERYTHING == 1)
+    auto t_start = std::chrono::high_resolution_clock::now();
+    //#endif
+
     std::string kernel_subname{};
     if(useSaved)
     {
+
         kernel_subname = kernel_name + "DBias";
         handle.GetKernel(algo_name, network_config, program_name, kernel_subname, vld, vgd, parms)(
             dy, dx);
@@ -382,7 +409,7 @@ void bnBwdTrainSelectMulti(Handle& handle,
 
         kernel_subname = kernel_name + "FinalDScale";
         handle.GetKernel(algo_name, network_config, program_name, kernel_subname, vld, vgd, parms)(
-            dx, dScale, inhw);
+            dx, dScale);
         profileSequence(handle, 1);
 
         kernel_subname = kernel_name + "DX";
@@ -392,7 +419,6 @@ void bnBwdTrainSelectMulti(Handle& handle,
     }
     else
     {
-
         if(handle.GetDeviceName() == "gfx803")
             parms += " -DMIO_BN_NODPP=1";
 
@@ -433,7 +459,7 @@ void bnBwdTrainSelectMulti(Handle& handle,
 
         kernel_subname = kernel_name + "FinalDScale";
         handle.GetKernel(algo_name, network_config, program_name, kernel_subname, vld, vgd, parms)(
-            dx, dScale, inhw);
+            dx, dScale);
         profileSequence(handle, 1);
 
         kernel_subname = kernel_name + "DX";
@@ -441,6 +467,12 @@ void bnBwdTrainSelectMulti(Handle& handle,
             x, dy, dx, bnScale, dScale, dBias, inhw);
         profileSequence(handle, 2);
     }
+    handle.Finish();
+    auto t_end = std::chrono::high_resolution_clock::now();
+
+    std::cout << "Wall clock: KERN LAUNCHES: "
+              << std::chrono::duration<double>(t_end - t_start).count() * 1000.0 << " ms."
+              << std::endl;
 }
 
 } // namespace miopen

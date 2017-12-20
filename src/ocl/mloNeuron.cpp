@@ -52,13 +52,11 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <miopen/mlo_internal.hpp>
 #include <miopen/mlo_utils.hpp>
 
-int mlo_construct_neuron::mloConstruct()
+void mlo_construct_neuron::mloConstruct()
 {
-    int ret     = 0;
     _hw_wave_sz = 64;
 
-    int read_unit         = 4;
-    std::string READ_TYPE = (read_unit == 1) ? "_FLOAT" : "_FLOAT" + std::to_string((read_unit));
+    const int read_unit = 4;
 
     size_t map_size = _search_params.in_width * _search_params.in_height * _search_params.n_inputs *
                       _search_params.batch_sz;
@@ -94,8 +92,6 @@ int mlo_construct_neuron::mloConstruct()
 
     _kernel_file = "MIOpenNeuron.cl";
     _kernel_name = (isForwardDirection()) ? "MIOpenNeuronFwd" : "MIOpenNeuronBwd";
-
-    return (ret);
 }
 
 int mlo_construct_neuron::mloConstructFwd()

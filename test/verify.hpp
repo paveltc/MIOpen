@@ -49,8 +49,14 @@ static constexpr sum_fn sum{};
 
 struct max_fn
 {
+    template <class T>
+    static T id(T x)
+    {
+        return x;
+    }
+
     template <class T, class U>
-    auto operator()(T x, U y) const MIOPEN_RETURNS(x > y ? x : y);
+    auto operator()(T x, U y) const MIOPEN_RETURNS(max_fn::id(x > y ? x : y));
 };
 static constexpr max_fn max{};
 
@@ -168,6 +174,5 @@ double rms_range(R1&& r1, R2&& r2)
     else
         return std::numeric_limits<range_value<R1>>::max();
 }
-}
-
+} // namespace miopen
 #endif

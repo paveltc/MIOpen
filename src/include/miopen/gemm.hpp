@@ -57,6 +57,51 @@ GemmGeometry CreateGemmGeometryConvFwd(const TensorDescriptor& xDesc,
                                        bool isDataColMajor,
                                        std::string& network_config);
 
+GemmGeometry CreateGemmGeometryRNN(int M,
+                                   int N,
+                                   int K,
+                                   float alpha,
+                                   float beta,
+                                   bool tA,
+                                   bool tB,
+                                   bool tC,
+                                   int lda,
+                                   int ldb,
+                                   int ldc,
+                                   bool isDataColMajor,
+                                   std::string& network_config);
+
+GemmGeometry ScanGemmGeometryRNN(Handle& handle,
+                                 ConstData_t A,
+                                 ConstData_t B,
+                                 Data_t C,
+                                 int M,
+                                 int N,
+                                 int K,
+                                 float alpha,
+                                 float beta,
+                                 bool tA,
+                                 bool tB,
+                                 bool tC,
+                                 int lda,
+                                 int ldb,
+                                 int ldc,
+                                 bool isDataColMajor,
+                                 std::string& network_config,
+                                 float timeout);
+
+GemmGeometry CreateMIOpenGemmGeometry(int M,
+                                      int N,
+                                      int K,
+                                      int lda,
+                                      int ldb,
+                                      int ldc,
+                                      bool tA,
+                                      bool tB,
+                                      bool isDataColMajor,
+                                      float alpha,
+                                      float beta);
+
 } // namespace miopen
 
 #endif // GUARD_MIOPEN_GEMM_HPP_

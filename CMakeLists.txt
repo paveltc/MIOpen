@@ -40,6 +40,8 @@ endif()
 
 project ( MIOpen C CXX )
 
+enable_testing()
+
 find_package(ROCM REQUIRED PATHS /opt/rocm)
 
 include(ROCMInstallTargets)
@@ -48,7 +50,14 @@ include(ROCMSetupVersion)
 include(ROCMInstallSymlinks)
 include(ROCMCreatePackage)
 
-rocm_setup_version(VERSION 1.1.4)
+
+# Strip symbols for release
+if(NOT WIN32 AND NOT APPLE)
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -s")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
+endif()
+
+rocm_setup_version(VERSION 1.2.0)
 
 list( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
@@ -134,12 +143,10 @@ else()
     set(MIOPEN_USE_MIOPENGEMM 0)
 endif()
 
-find_package(OpenSSL)
+find_package(OpenSSL REQUIRED)
 set(BOOST_COMPONENTS filesystem system)
 add_definitions(-DBOOST_ALL_NO_LIB=1)
-find_package(Boost COMPONENTS ${BOOST_COMPONENTS})
-
-set(MIOPEN_USE_CACHE On CACHE BOOL "")
+find_package(Boost REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 
 option( BUILD_SHARED_LIBS "Build as a shared library" ON )
 
@@ -177,8 +184,8 @@ include(ClangTidy)
 enable_clang_tidy(
     CHECKS 
         *
+        -cert-env33-c
         -android-cloexec-fopen
-        -cert-err60-cpp
         # Yea we shouldn't be using rand()
         -cert-msc30-c
         -cert-msc50-cpp
@@ -186,6 +193,7 @@ enable_clang_tidy(
         -clang-analyzer-optin.performance.Padding
         -clang-diagnostic-deprecated-declarations
         -clang-diagnostic-extern-c-compat
+        -clang-diagnostic-unused-command-line-argument
         -cppcoreguidelines-pro-bounds-array-to-pointer-decay
         -cppcoreguidelines-pro-bounds-constant-array-index
         -cppcoreguidelines-pro-bounds-pointer-arithmetic
@@ -201,6 +209,7 @@ enable_clang_tidy(
         -google-runtime-references
         -hicpp-braces-around-statements
         -hicpp-explicit-conversions
+        -hicpp-no-array-decay
         # We really shouldn't use bitwise operators with signed integers, but
         # opencl leaves us no choice
         -hicpp-signed-bitwise
@@ -212,10 +221,8 @@ enable_clang_tidy(
         -misc-macro-parentheses
         -misc-misplaced-const
         -misc-misplaced-widening-cast
-        -modernize-loop-convert
         -modernize-pass-by-value
         -modernize-use-default-member-init
-        -modernize-use-emplace
         -modernize-use-equals-default
         -modernize-use-transparent-functors
         -performance-unnecessary-value-param
@@ -235,6 +242,33 @@ enable_clang_tidy(
         -DMIOPEN_USE_CLANG_TIDY
     ANALYZE_TEMPORARY_DTORS ON
 
+)
+include(CppCheck)
+enable_cppcheck(
+    CHECKS 
+        all
+    FORCE
+    SUPPRESS 
+        ConfigurationNotChecked
+        unmatchedSuppression
+        constStatement
+        noExplicitConstructor
+        passedByValue
+        # preprocessorErrorDirective
+        unusedStructMember
+        # TODO: Try to reenable this without needing inline suppressions
+        leakReturnValNotUsed
+        *:*.cl
+    SOURCES
+        include/
+        src/
+        # test/
+    INCLUDE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/include
+    DEFINE
+        MIOPEN_USE_MIOPENGEMM=1
 )
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)

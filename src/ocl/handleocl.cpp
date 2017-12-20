@@ -29,11 +29,9 @@
 #include <miopen/kernel_cache.hpp>
 #include <miopen/manage_ptr.hpp>
 #include <miopen/ocldeviceinfo.hpp>
-#if MIOPEN_USE_CACHE
 #include <miopen/binary_cache.hpp>
 #include <miopen/load_file.hpp>
 #include <boost/filesystem.hpp>
-#endif
 #include <string>
 
 #ifndef _WIN32
@@ -510,7 +508,6 @@ KernelInvoke Handle::GetKernel(const std::string& algorithm, const std::string& 
 
 Program Handle::LoadProgram(const std::string& program_name, std::string params, bool is_kernel_str)
 {
-#if MIOPEN_USE_CACHE
     auto cache_file =
         miopen::LoadBinary(this->GetDeviceName(), program_name, params, is_kernel_str);
     if(cache_file.empty())
@@ -535,13 +532,6 @@ Program Handle::LoadProgram(const std::string& program_name, std::string params,
                                  miopen::GetDevice(this->GetStream()),
                                  miopen::LoadFile(cache_file));
     }
-#else
-    return miopen::LoadProgram(miopen::GetContext(this->GetStream()),
-                               miopen::GetDevice(this->GetStream()),
-                               program_name,
-                               params,
-                               is_kernel_str);
-#endif
 }
 
 void Handle::Finish() const { clFinish(this->GetStream()); }
@@ -597,6 +587,19 @@ void Handle::Copy(ConstData_t src, Data_t dest, std::size_t size)
     {
         MIOPEN_THROW_CL_STATUS(status, "OpenCL error copying buffer: " + std::to_string(size));
     }
+}
+
+shared<Data_t> Handle::CreateSubBuffer(Data_t data, std::size_t offset, std::size_t size)
+{
+    struct region
+    {
+        std::size_t origin;
+        std::size_t size;
+    };
+    cl_int error = 0;
+    auto r       = region{offset, size};
+    auto mem = clCreateSubBuffer(data, CL_MEM_READ_WRITE, CL_BUFFER_CREATE_TYPE_REGION, &r, &error);
+    return {mem, manage_deleter<decltype(&clReleaseMemObject), &clReleaseMemObject>{}};
 }
 
 } // namespace miopen
