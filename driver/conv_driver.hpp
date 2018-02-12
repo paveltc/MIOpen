@@ -58,7 +58,7 @@
 
 MIOPEN_DECLARE_ENV_VAR(MIOPEN_DRIVER_PAD_BUFFERS_2M)
 
-template <typename T>
+/*template <typename T>
 void dumpBufferToFile(const char* fileName, T* data, size_t dataNumItems)
 {
     std::ofstream outFile(fileName, std::ios::binary);
@@ -90,7 +90,7 @@ bool readBufferFromFile(T* data, size_t dataNumItems, const char* fileName)
         printf("Could not open file %s for reading\n", fileName);
         return false;
     }
-}
+}*/
 
 template <typename T>
 class ConvDriver : public Driver

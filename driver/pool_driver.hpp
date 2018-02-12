@@ -38,9 +38,9 @@
 #include <memory>
 #include <miopen/miopen.h>
 #include <miopen/tensor.hpp>
-#include <miopen/pooling.hpp>
 #include <numeric>
 #include <vector>
+
 
 template <typename T>
 class PoolDriver : public Driver
@@ -168,8 +168,8 @@ int PoolDriver<T>::AddCmdLineArgs()
         "wall", 'w', "0", "Wall-clock Time Each Layer, Requires time == 1 (Default=0)", "int");
     inflags.AddInputFlag("print", 'P', "1", "Print Pooling Dimensions (Default=1)", "int");
     inflags.AddInputFlag("mode", 'm', "max", "Pooling Mode (max, avg) (Default=max)", "str");
-    inflags.AddInputFlag(
-        "pad_mode", 'z', "default", "Padding Mode (same, valid, default) (Default=default)", "str");
+    inflags.AddInputFlag("dump_output", 'o', "0", "Dumps the output buffers (Default=0)", "int");
+    inflags.AddInputFlag("in_data", 'd', "", "Input data filename (Default=)", "string");
 
     return 0;
 }
@@ -190,22 +190,19 @@ int PoolDriver<T>::SetPoolDescriptorFromCmdLineArgs()
 {
 
     miopenPoolingMode_t mode;
-    miopenPaddingMode_t pmode = miopenPaddingDefault;
-    int pad_h                 = inflags.GetValueInt("pad_h");
-    int pad_w                 = inflags.GetValueInt("pad_w");
-    int u                     = inflags.GetValueInt("pool_stride_0");
-    int v                     = inflags.GetValueInt("pool_stride_1");
-    int win_h                 = inflags.GetValueInt("win_h");
-    int win_w                 = inflags.GetValueInt("win_w");
+    int pad_h = inflags.GetValueInt("pad_h");
+    int pad_w = inflags.GetValueInt("pad_w");
+    int u     = inflags.GetValueInt("pool_stride_0");
+    int v     = inflags.GetValueInt("pool_stride_1");
+    int win_h = inflags.GetValueInt("win_h");
+    int win_w = inflags.GetValueInt("win_w");
     if((inflags.GetValueStr("mode")) == "max")
     {
-        mode  = miopenPoolingMax;
-        pmode = miopenPaddingDefault;
+        mode = miopenPoolingMax;
     }
     else if((inflags.GetValueStr("mode")) == "avg")
     {
-        mode  = miopenPoolingAverage;
-        pmode = miopenPaddingDefault;
+        mode = miopenPoolingAverage;
     }
     else
     {
@@ -213,29 +210,7 @@ int PoolDriver<T>::SetPoolDescriptorFromCmdLineArgs()
         exit(0);
     }
 
-    if((inflags.GetValueStr("pad_mode")) == "same")
-    {
-        pmode = miopenPaddingSame;
-    }
-    else if((inflags.GetValueStr("pad_mode")) == "valid")
-    {
-        pmode = miopenPaddingValid;
-    }
-    else if((inflags.GetValueStr("pad_mode")) == "default")
-    {
-        pmode = miopenPaddingDefault;
-    }
-    else
-    {
-        printf("Incorrect Padding Mode\n");
-        exit(0);
-    }
-    std::initializer_list<int> lens    = {win_h, win_w};
-    std::initializer_list<int> pads    = {pad_h, pad_w};
-    std::initializer_list<int> strides = {u, v};
-    miopen::deref(poolDesc) =
-        miopen::PoolingDescriptor(mode, pmode, lens.begin(), pads.begin(), strides.begin(), 2);
-    return miopenStatusSuccess;
+    return miopenSet2dPoolingDescriptor(poolDesc, mode, win_h, win_w, pad_h, pad_w, u, v);
 }
 
 template <typename T>
@@ -244,7 +219,6 @@ std::vector<int> PoolDriver<T>::GetOutputTensorLengths()
     int n, c, h, w;
 
     miopenGetPoolingForwardOutputDim(poolDesc, inputTensor, &n, &c, &h, &w);
-
     return std::vector<int>({n, c, h, w});
 }
 
@@ -259,7 +233,7 @@ int PoolDriver<T>::AllocateBuffersAndCopy()
 #if MIOPEN_BACKEND_OPENCL
     cl_context ctx;
 
-    clGetCommandQueueInfo(q, CL_QUEUE_CONTEXT, sizeof(cl_context), &ctx, nullptr);
+    clGetCommandQueueInfo(q, CL_QUEUE_CONTEXT, sizeof(cl_context), &ctx, NULL);
 #elif MIOPEN_BACKEND_HIP
     uint32_t ctx = 0;
 #endif
@@ -281,14 +255,27 @@ int PoolDriver<T>::AllocateBuffersAndCopy()
     dout    = std::vector<T>(out_sz);
     dinhost = std::vector<T>(in_sz, 0);
 
-    for(int i = 0; i < in_sz; i++)
+    std::string inFileName   = inflags.GetValueStr("in_data");
+    bool dataRead = false;
+    if(!inFileName.empty())
     {
-        in[i] = rand() * (1.0 / RAND_MAX);
+        dataRead = readBufferFromFile(in.data(), in_sz, inFileName.c_str());
     }
 
-    for(int i = 0; i < out_sz; i++)
+    if(!dataRead)
     {
+      for(int i = 0; i < in_sz; i++)
+      {
+          in[i] = rand() * (1.0 / RAND_MAX);
+      }
+    }
+
+    if(!dataRead)
+    {
+      for(int i = 0; i < out_sz; i++)
+      {
         dout[i] = static_cast<double>((rand()) * (1.0 / RAND_MAX) - 0.5) * 0.001;
+      }
     }
 
 #if MIOPEN_BACKEND_OPENCL
@@ -359,6 +346,12 @@ int PoolDriver<T>::RunForwardGPU()
     out_dev->FromGPU(GetStream(), out.data());
     mask_dev->FromGPU(GetStream(), mask.data());
 
+    if(inflags.GetValueInt("dump_output"))
+    {
+        dumpBufferToFile("dump_pool_fwd_out_gpu.bin", out.data(), out.size());
+        printf("DEBUG: out.size() = %zd\n", out.size());
+    }
+
     return miopenStatusSuccess;
 }
 
@@ -413,8 +406,6 @@ int PoolDriver<T>::RunBackwardGPU()
         printf("GPU Kernel Time Backward Pooling Elapsed: %f ms\n", time);
     }
 
-    din_dev->FromGPU(GetStream(), din.data());
-
     return miopenStatusSuccess;
 }
 
@@ -436,7 +427,6 @@ int PoolDriver<T>::VerifyForward()
     miopenGet4dTensorDescriptorLengths(outputTensor, &nOut, &cOut, &hOut, &wOut);
 
     miopenPoolingMode_t mode;
-    miopenPaddingMode_t pmode = miopen::deref(poolDesc).pmode;
     int windowHeight;
     int windowWidth;
     int pad_h;
@@ -445,25 +435,6 @@ int PoolDriver<T>::VerifyForward()
     int v;
     miopenGet2dPoolingDescriptor(
         poolDesc, &mode, &windowHeight, &windowWidth, &pad_h, &pad_w, &u, &v);
-
-    if(pmode == miopenPaddingSame)
-    {
-        pad_h = (hIn % u == 0) ? (std::max((windowHeight - u), 0))
-                               : (std::max((windowHeight - (hIn % u)), 0));
-        pad_w = (wIn % v == 0) ? (std::max((windowWidth - v), 0))
-                               : (std::max((windowWidth - (wIn % v)), 0));
-
-        pad_h /= 2;
-        pad_w /= 2;
-    }
-    else if(pmode == miopenPaddingValid)
-    {
-        pad_h = 0;
-        pad_w = 0;
-    }
-
-    if(hOut <= 0 || wOut <= 0)
-        MIOPEN_THROW("Invalid Test Case: Check Output Dimension.");
 
     int pooling_method = (mode == miopenPoolingMax) ? MLO_POOLING_OP_MAX : MLO_POOLING_OP_AVE;
 
@@ -520,7 +491,6 @@ int PoolDriver<T>::VerifyBackward()
     miopenGet4dTensorDescriptorLengths(dOutputTensor, &ndOut, &cdOut, &hdOut, &wdOut);
 
     miopenPoolingMode_t mode;
-    miopenPaddingMode_t pmode = miopen::deref(poolDesc).pmode;
     int windowHeight;
     int windowWidth;
     int pad_h;
@@ -530,23 +500,6 @@ int PoolDriver<T>::VerifyBackward()
     miopenGet2dPoolingDescriptor(
         poolDesc, &mode, &windowHeight, &windowWidth, &pad_h, &pad_w, &u, &v);
 
-    if(hOut <= 0 || wOut <= 0)
-        MIOPEN_THROW("Invalid Test Case: Check Output Dimension.");
-
-    if(pmode == miopenPaddingSame)
-    {
-        pad_h = (hIn % u == 0) ? (std::max((windowHeight - u), 0))
-                               : (std::max((windowHeight - (hIn % u)), 0));
-        pad_w = (wIn % v == 0) ? (std::max((windowWidth - v), 0))
-                               : (std::max((windowWidth - (wIn % v)), 0));
-        pad_h /= 2;
-        pad_w /= 2;
-    }
-    else if(pmode == miopenPaddingValid)
-    {
-        pad_h = 0;
-        pad_w = 0;
-    }
     int pooling_method = (mode == miopenPoolingMax) ? MLO_POOLING_OP_MAX : MLO_POOLING_OP_AVE;
 
     mloPoolingBackwardRunHost<float>(pooling_method,
